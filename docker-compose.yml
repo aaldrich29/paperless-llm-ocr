@@ -1,0 +1,59 @@
+services:
+  paperless-llm-ocr:
+    image: ghcr.io/aaldrich29/paperless-llm-ocr:latest
+    # To build locally instead of pulling the prebuilt image, comment out
+    # the "image:" line above and uncomment the next line:
+    # build: .
+    container_name: paperless-llm-ocr
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # --- Required ---
+
+      # Internal URL of your Paperless-ngx instance
+      # If running on the same Docker network, use the service/container name
+      - PAPERLESS_URL=http://paperless-ngx:8000
+
+      # Paperless API token (see README for how to get this)
+      - PAPERLESS_TOKEN=${PAPERLESS_TOKEN}
+
+      # API key for your LLM provider
+      - LLM_API_KEY=${LLM_API_KEY}
+
+      # --- Optional ---
+
+      # Base URL of the LLM API (OpenAI-compatible)
+      # Default: https://openrouter.ai/api/v1
+      # For OpenAI: https://api.openai.com/v1
+      #- LLM_BASE_URL=https://openrouter.ai/api/v1
+
+      # Model to use. Must support vision (PDF/image input).
+      # Default: google/gemini-3.1-flash-lite-preview
+      #- MODEL=google/gemini-3.1-flash-lite-preview
+
+      # Tag name that triggers manual reprocessing when added to a document
+      # Default: Run LLM OCR
+      #- TRIGGER_TAG_NAME=Run LLM OCR
+
+      # Tag added to documents after successful processing (leave unset to disable)
+      #- PROCESSED_TAG_NAME=OCR Done
+
+      # Maximum output tokens for the LLM response (leave unset to use API default)
+      # Increase for very long or multi-page documents if text gets cut off
+      #- MAX_TOKENS=4096
+
+      # Override the built-in OCR prompt entirely with your own
+      # Must still instruct the model to return the same JSON schema fields:
+      # title, text, date, correspondent, document_type, tags
+      #- CUSTOM_PROMPT=Your custom prompt here
+
+    # If Paperless-ngx is on a different Docker network, add it here:
+    # networks:
+    #   - paperless_net
+
+# If Paperless-ngx is on a named Docker network, define it here:
+# networks:
+#   paperless_net:
+#     external: true
+#     name: paperless_default   # replace with actual network name
