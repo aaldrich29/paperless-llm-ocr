@@ -7,11 +7,21 @@ A lightweight FastAPI microservice that replaces Paperless-ngx's built-in Tesser
 - Detects the document date
 - Identifies the correspondent (sender/author)
 - Assigns a document type
-- Suggests and applies 3–8 tags (reusing existing ones where possible)
+- Suggests and applies 3–8 tags — prefers your existing tags, correspondents, and document types before creating new ones
 
 Works with any OpenAI-compatible API — [OpenRouter](https://openrouter.ai) (Gemini, Claude, GPT-4o, etc.) or OpenAI directly.
 
-### Why this beats Tesseract
+### How It Works
+
+1. **Deploy** this container on the same Docker network as Paperless-ngx
+2. **Create a webhook** in Paperless that fires on new documents (and/or when a tag is added)
+3. **Documents are processed automatically** — or manually by adding a trigger tag (default: `Run LLM OCR`)
+4. *(Optional)* [Disable Paperless built-in OCR](#disable-paperless-built-in-ocr) to avoid redundant Tesseract processing
+5. *(Optional)* [Customize the OCR prompt](#configuration) via the `CUSTOM_PROMPT` environment variable
+
+The service receives the webhook, downloads the PDF from Paperless, fetches your existing tags/correspondents/document types for context, sends everything to the LLM, and writes the results back via the Paperless API.
+
+### Why This Beats Tesseract
 
 Paperless-ngx ships with Tesseract, which struggles with anything that isn't a clean, high-contrast, machine-printed document. Skewed scans, low-resolution photos, stylized fonts, and handwriting all produce garbled or empty text.
 
@@ -38,8 +48,10 @@ services:
     # build: .
     container_name: paperless-llm-ocr
     restart: unless-stopped
-    ports:
-      - "8080:8080"
+    # Uncomment to expose the port externally (e.g. if not on the same
+    # Docker network as Paperless). Note: the webhook has no authentication.
+    # ports:
+    #   - "8080:8080"
     environment:
       - PAPERLESS_URL=http://paperless-ngx:8000
       - PAPERLESS_TOKEN=${PAPERLESS_TOKEN}
@@ -48,7 +60,7 @@ services:
       #- MODEL=google/gemini-3.1-flash-lite-preview
       #- LLM_BASE_URL=https://openrouter.ai/api/v1
       #- TRIGGER_TAG_NAME=Run LLM OCR
-      #- PROCESSED_TAG_NAME=OCR Done
+      - PROCESSED_TAG_NAME=OCR Done
       #- MAX_TOKENS=4096
 
     # If Paperless is on a different Docker network:
@@ -77,7 +89,7 @@ docker compose up -d
 **4. Verify:**
 
 ```bash
-curl http://localhost:8080/health
+docker exec paperless-llm-ocr python -c "import httpx; print(httpx.get('http://localhost:8080/health').json())"
 ```
 
 ---
@@ -172,7 +184,7 @@ docker compose up -d webserver
 
 ## Configure Paperless Workflows
 
-This service is triggered by Paperless **Workflows**. Set up two:
+This service is triggered by Paperless **Workflows**. The webhook URL uses the container name (`paperless-llm-ocr`) which works when both services share a Docker network. If they're on separate networks, use the host IP and exposed port instead (e.g. `http://192.168.1.50:8080/webhook`).
 
 ### Workflow 1 — Automatic (process every new document)
 
@@ -182,7 +194,7 @@ This service is triggered by Paperless **Workflows**. Set up two:
    - **Trigger:** Document Added
    - **Filter:** *(leave blank to process all documents)*
    - **Action:** Webhook
-   - **Webhook URL:** `http://<your-server-ip>:8080/webhook`
+   - **Webhook URL:** `http://paperless-llm-ocr:8080/webhook`
    - **Send as JSON:** Yes
    - **Body:**
      ```json
@@ -199,7 +211,7 @@ This service is triggered by Paperless **Workflows**. Set up two:
    - **Trigger:** Document Updated
    - **Filter:** Has tag `Run LLM OCR`
    - **Action:** Webhook
-   - **Webhook URL:** `http://<your-server-ip>:8080/webhook`
+   - **Webhook URL:** `http://paperless-llm-ocr:8080/webhook`
    - **Send as JSON:** Yes
    - **Body:**
      ```json
